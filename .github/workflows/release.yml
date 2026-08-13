@@ -1,0 +1,257 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Bump version
+        id: bump
+        run: |
+          CURRENT=$(node -p "require('./package.json').version")
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          case "${{ inputs.bump }}" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          TAG="v${NEW_VERSION}"
+
+          # Update package.json
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '${NEW_VERSION}';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+          echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git diff --cached --quiet || git commit -m "release: bump version to ${{ steps.bump.outputs.version }}"
+          git tag ${{ steps.bump.outputs.tag }}
+          git push origin master --tags
+
+  create-release:
+    needs: bump-version
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create.outputs.id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Build release body
+        id: body
+        run: |
+          python3 - <<'PYEOF'
+          import re, os
+
+          with open(".github/CHANGELOG.md", "r") as f:
+              content = f.read()
+
+          # Extract Unreleased section
+          pattern = r"## Unreleased\n(.*?)(?=\n## |\Z)"
+          match = re.search(pattern, content, re.DOTALL)
+
+          lines = []
+
+          if match:
+              section = match.group(1).strip()
+              current_header = None
+              grouped = {}
+
+              for line in section.split("\n"):
+                  if line.startswith("### "):
+                      current_header = line
+                      grouped[current_header] = []
+                  elif line.startswith("- ") and current_header:
+                      grouped[current_header].append(line)
+
+              for header, items in grouped.items():
+                  if items:
+                      lines.append(header)
+                      lines.extend(items)
+                      lines.append("")
+
+          if not lines:
+              lines.append("No changelog entries for this release.")
+              lines.append("")
+
+          lines.append("---")
+          lines.append("Download the installer for your platform below.")
+
+          body = "\n".join(lines)
+
+          # Write to file for multiline output
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"body<<BODY_EOF\n{body}\nBODY_EOF\n")
+          PYEOF
+
+      - name: Create draft release
+        id: create
+        uses: actions/github-script@v8
+        env:
+          BODY: ${{ steps.body.outputs.body }}
+        with:
+          script: |
+            const body = process.env.BODY;
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: '${{ needs.bump-version.outputs.tag }}',
+              name: `showdown-to-vgc ${{ needs.bump-version.outputs.tag }}`,
+              body: body,
+              draft: true,
+              prerelease: false,
+            });
+            core.setOutput('id', data.id);
+
+  publish:
+    needs: [bump-version, create-release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump-version.outputs.tag }}
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-release:
+    needs: [create-release, publish]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ needs.create-release.outputs.release_id }},
+              draft: false,
+            });
+
+  promote-changelog:
+    needs: [bump-version, publish-release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Promote unreleased to version
+        run: |
+          export VERSION="${{ needs.bump-version.outputs.tag }}"
+          export DATE=$(date +%Y-%m-%d)
+
+          python3 - <<'PYEOF'
+          import re, os
+
+          version = os.environ["VERSION"]
+          date = os.environ["DATE"]
+
+          with open(".github/CHANGELOG.md", "r") as f:
+              content = f.read()
+
+          pattern = r"(## Unreleased\n)(.*?)(?=\n## |\Z)"
+          match = re.search(pattern, content, re.DOTALL)
+
+          if not match:
+              print("No Unreleased section found")
+              exit(0)
+
+          unreleased_content = match.group(2).strip()
+
+          entries = [l for l in unreleased_content.split("\n") if l.startswith("- ")]
+          if not entries:
+              print("No entries in Unreleased section")
+              exit(0)
+
+          lines = unreleased_content.split("\n")
+          sections = {}
+          current_section = None
+          for line in lines:
+              if line.startswith("### "):
+                  current_section = line
+                  sections[current_section] = []
+              elif line.startswith("- ") and current_section:
+                  sections[current_section].append(line)
+
+          version_parts = [f"## {version} - ({date})"]
+          for header, items in sections.items():
+              if items:
+                  version_parts.append(f"\n{header}")
+                  version_parts.extend(items)
+
+          version_section = "\n".join(version_parts)
+
+          new_unreleased = "## Unreleased\n\n### Added\n\n### Fixed\n"
+          new_content = content[:match.start()] + new_unreleased + "\n" + version_section + content[match.end():]
+
+          with open(".github/CHANGELOG.md", "w") as f:
+              f.write(new_content)
+
+          print(f"Promoted Unreleased to {version} ({date})")
+          PYEOF
+
+      - name: Commit changelog
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/CHANGELOG.md
+          git diff --cached --quiet || git commit -m "changelog: promote unreleased to ${{ needs.bump-version.outputs.tag }}"
+          git push

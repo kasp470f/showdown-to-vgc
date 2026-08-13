@@ -1,0 +1,112 @@
+name: Update Changelog (v2)
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  update-changelog:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Run changelog update via Octokit
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.info('No pull_request payload found, exiting');
+              return;
+            }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = pr.number;
+            const prTitle = pr.title || '';
+            const prAuthor = (pr.user && pr.user.login) || 'unknown';
+            const mergeSha = pr.merge_commit_sha || pr.head && pr.head.sha || '';
+            const shortSha = mergeSha ? mergeSha.substring(0,7) : '';
+
+            // Decide section
+            let section = 'Added';
+            if (/^fix/i.test(prTitle)) section = 'Fixed';
+            else if (/^feat/i.test(prTitle)) section = 'Added';
+
+            const entry = `- ([\`${shortSha}\`](https://github.com/${owner}/${repo}/commit/${mergeSha})) ${prTitle} - @${prAuthor} ([#${prNumber}](https://github.com/${owner}/${repo}/pull/${prNumber}))`;
+
+            // Fetch current changelog
+            const path = '.github/CHANGELOG.md';
+            let contentResp;
+            try {
+              contentResp = await github.rest.repos.getContent({ owner, repo, path });
+            } catch (err) {
+              core.setFailed(`Failed to read ${path}: ${err.message}`);
+              return;
+            }
+
+            const encoded = contentResp.data.content;
+            const currentSha = contentResp.data.sha;
+            const buffer = Buffer.from(encoded, 'base64');
+            let text = buffer.toString('utf8');
+
+            if (text.includes(entry)) {
+              core.info('Changelog entry already exists, skipping');
+              return;
+            }
+
+            // Normalize newlines to \n for processing
+            const eol = text.includes('\r\n') ? '\r\n' : '\n';
+            const nl = '\n';
+            const unreleasedHeader = `## Unreleased${nl}`;
+            const sectionHeader = `### ${section}${nl}`;
+
+            const idxUnreleased = text.indexOf('## Unreleased');
+            if (idxUnreleased === -1) {
+              core.setFailed('No "## Unreleased" section found in changelog');
+              return;
+            }
+
+            // Attempt to insert under the chosen section within Unreleased
+              const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
+              const sectionPattern = escapeRegExp(section);
+              const pattern = new RegExp(`(## Unreleased${eol}[\\s\\S]*?### ${sectionPattern}${eol})`);
+            const match = text.match(pattern);
+            let newText;
+            if (match) {
+              // Insert entry after the section header
+              newText = text.replace(pattern, (m) => m + entry + eol);
+            } else {
+              // Fallback: append to Unreleased block just after the header
+              const start = idxUnreleased + unreleasedHeader.length;
+              newText = text.slice(0, start) + eol + `### ${section}${eol}` + entry + eol + text.slice(start);
+            }
+
+            if (newText === text) {
+              core.setFailed('Failed to insert changelog entry (no change detected)');
+              return;
+            }
+
+            const updatedContent = Buffer.from(newText, 'utf8').toString('base64');
+
+            try {
+              await github.rest.repos.createOrUpdateFileContents({
+                owner,
+                repo,
+                path,
+                message: `chore: add changelog entry for PR #${prNumber}`,
+                content: updatedContent,
+                sha: currentSha,
+                committer: { name: 'github-actions[bot]', email: 'github-actions[bot]@users.noreply.github.com' }
+              });
+              core.info('Changelog updated successfully');
+            } catch (err) {
+              core.setFailed(`Failed to update changelog: ${err.message}`);
+              return;
+            }

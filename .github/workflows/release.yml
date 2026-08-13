@@ -116,9 +116,6 @@ jobs:
               lines.append("No changelog entries for this release.")
               lines.append("")
 
-          lines.append("---")
-          lines.append("Download the installer for your platform below.")
-
           body = "\n".join(lines)
 
           # Write to file for multiline output

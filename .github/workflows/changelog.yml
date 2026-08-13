@@ -3,7 +3,7 @@ name: Update Changelog (v2)
 on:
   pull_request:
     types: [closed]
-    branches: [master]
+    branches: [main]
 
 permissions:
   contents: write

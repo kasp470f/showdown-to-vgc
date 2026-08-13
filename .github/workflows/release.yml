@@ -145,31 +145,8 @@ jobs:
             });
             core.setOutput('id', data.id);
 
-  publish:
-    needs: [bump-version, create-release]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.bump-version.outputs.tag }}
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Publish to npm
-        run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
   publish-release:
-    needs: [create-release, publish]
+    needs: [bump-version, create-release]
     runs-on: ubuntu-latest
     steps:
       - name: Publish release

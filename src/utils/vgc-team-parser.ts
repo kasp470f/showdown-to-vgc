@@ -1,37 +1,60 @@
-import { Generation, Generations, type PokemonSet } from '@pkmn/data';
+import { Generation, Generations, type Data, type PokemonSet } from '@pkmn/data';
 import type { Format, GenerationID } from '../types/format';
 import type { VGCPokemon, VGCTeam } from '../types/vgc-team';
 import { FormRequiredSpecies } from '../data/form-required-species';
 import { calcStatChampions } from './stat-calc';
-import { Dex as GenerationDex, type StatID } from '@pkmn/dex';
+import { Dex, ModdedDex, type StatID, ID, ModData } from '@pkmn/dex';
 import type { Species } from '@pkmn/dex-types';
 import type { ShowdownTeam } from '../types/showdown-team';
 
-export function getVGCTeam(
+function championsExists(d: Data): boolean {
+  if (!d.exists) return false;
+  if ('isNonstandard' in d && d.isNonstandard && d.isNonstandard !== 'Past') return false;
+  if (d.kind === 'Ability' && d.id === 'noability') return false;
+  return !('tier' in d && d.tier === 'Unreleased');
+}
+
+/** Strips Mega/Primal forme suffixes (e.g. "-Mega", "-Mega-X", "-Mega-Y", "-Primal") to fall back to the base species. */
+function baseSpeciesId(id: string): string {
+  return id.replace(/-Mega(?:-[XY])?$/, '').replace(/-Primal$/, '');
+}
+
+export async function getVGCTeam(
   showdownTeam: ShowdownTeam,
   genNum: GenerationID,
   format: Format = undefined,
-): VGCTeam {
+): Promise<VGCTeam> {
   try {
     if (!showdownTeam) return;
 
     const team = showdownTeam.team;
     if (!team) throw new Error('Unable to get team');
 
-    const generation = new Generations(GenerationDex).get(genNum);
-    if (!generation) throw new Error('Unable to get dex for ${generationNum}');
+    let dex: ModdedDex = Dex;
+    const isChampionsFormat = format === 'champions';
+
+    if (isChampionsFormat) {
+      const championsMod = (await import('@pkmn/mods/champions')) as ModData;
+      dex = Dex.mod(`gen${genNum}` as ID, championsMod);
+    }
+
+    const generation = new Generations(dex, isChampionsFormat ? championsExists : undefined).get(
+      genNum,
+    );
+    if (!generation) throw new Error(`Unable to get dex for ${genNum}`);
 
     const teamDexIds = team.map((set) => set.species);
     if (teamDexIds.length === 0 || teamDexIds.length > 6) return;
 
-    const speciesData = teamDexIds.map((id) => generation.species.get(id!));
+    const speciesData = teamDexIds
+      .map((id) => generation.species.get(id!) ?? generation.species.get(baseSpeciesId(id!)))
+      .filter((v) => v !== undefined);
     if (speciesData.length === 0) return;
 
     if (speciesData.length !== team.length) {
       throw new Error('Mismatch between species data and team set list lengths');
     }
 
-    const isChampionsFormat = format === 'champions';
     const vgcTeam: VGCTeam = [];
 
     team.forEach((set, index) => {

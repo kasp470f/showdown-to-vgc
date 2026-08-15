@@ -32,7 +32,7 @@ Calm Nature
 `;
 
 const sampleTeamMegaChampions = `
-Garchomp-Mega-Z @ Garchompite Z  
+Garchomp-Mega @ Garchompite  
 Ability: Sand Force  
 Level: 50  
 EVs: 2 HP / 32 SpA / 32 Spe  
@@ -59,12 +59,12 @@ test('getShowdownTeam returns undefined for invalid input', () => {
   assert.equal(team, undefined);
 });
 
-test('getVGCTeam uses champion stat calculations for champions format', () => {
+test('getVGCTeam uses champion stat calculations for champions format', async () => {
   const team = getShowdownTeam(sampleTeamChampions, 9);
   assert.ok(team);
 
   if (!team) throw new Error('team should be defined');
-  const vgcTeam = getVGCTeam(team, 9, 'champions');
+  const vgcTeam = await getVGCTeam(team, 9, 'champions');
 
   assert.ok(vgcTeam);
   assert.equal(vgcTeam?.length, 1);
@@ -95,12 +95,12 @@ test('nature multipliers reflect the plus and minus stats', () => {
   assert.equal(calcNatureMultiplier('atk', 'Serious'), 1);
 });
 
-test('getVGCTeam correctly handles Mega forms in champions format', () => {
+test('getVGCTeam resolves the real Mega form in champions format', async () => {
   const team = getShowdownTeam(sampleTeamMegaChampions, 9);
   assert.ok(team);
 
   if (!team) throw new Error('team should be defined');
-  const vgcTeam = getVGCTeam(team, 9, 'champions');
+  const vgcTeam = await getVGCTeam(team, 9, 'champions');
 
   assert.ok(vgcTeam);
   assert.equal(vgcTeam?.length, 1);
@@ -108,10 +108,28 @@ test('getVGCTeam correctly handles Mega forms in champions format', () => {
   const garchomp = vgcTeam?.[0];
   assert.ok(garchomp);
   if (!garchomp) throw new Error('garchomp should be defined');
-  assert.equal(garchomp.name, 'Garchomp');
+  assert.equal(garchomp.name, 'Garchomp-Mega');
   assert.equal(garchomp.nature, 'Timid');
-  assert.equal(garchomp.stats.spe, 169); // Ensure that the speed stat is calculated correctly for the non-Mega form
-  assert.notEqual(garchomp.stats.spe, 193); // Ensure that the speed stat is not the value of the mega
+  assert.equal(garchomp.ability, 'Sand Force'); // Mega Garchomp's actual ability
+  assert.equal(garchomp.stats.spe, 158); // Uses Mega Garchomp's base speed (92), not base Garchomp's (102)
+});
+
+test('getVGCTeam downgrades Mega forms to their base species outside champions format', async () => {
+  const team = getShowdownTeam(sampleTeamMegaChampions, 9);
+  assert.ok(team);
+
+  if (!team) throw new Error('team should be defined');
+  const vgcTeam = await getVGCTeam(team, 9);
+
+  assert.ok(vgcTeam);
+  assert.equal(vgcTeam?.length, 1);
+
+  const garchomp = vgcTeam?.[0];
+  assert.ok(garchomp);
+  if (!garchomp) throw new Error('garchomp should be defined');
+  assert.equal(garchomp.name, 'Garchomp'); // Mega Stone has no effect outside champions format
+  assert.equal(garchomp.stats.spe, 138);
+  assert.notEqual(garchomp.stats.atk, 171); // Not the Mega's attack stat
 });
 
 test('the package root exposes the public API', () => {

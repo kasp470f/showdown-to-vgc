@@ -7,7 +7,7 @@ import { Dex, ModdedDex, type StatID, ID, ModData } from '@pkmn/dex';
 import type { Species } from '@pkmn/dex-types';
 import type { ShowdownTeam } from '../types/showdown-team';
 
-function championsExists(d: Data): boolean {
+export function championsExists(d: Data): boolean {
   if (!d.exists) return false;
   if ('isNonstandard' in d && d.isNonstandard && d.isNonstandard !== 'Past') return false;
   if (d.kind === 'Ability' && d.id === 'noability') return false;
@@ -15,7 +15,7 @@ function championsExists(d: Data): boolean {
 }
 
 /** Strips Mega/Primal forme suffixes (e.g. "-Mega", "-Mega-X", "-Mega-Y", "-Primal") to fall back to the base species. */
-function baseSpeciesId(id: string): string {
+export function baseSpeciesId(id: string): string {
   return id.replace(/-Mega(?:-[XY])?$/, '').replace(/-Primal$/, '');
 }
 

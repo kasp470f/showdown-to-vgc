@@ -3,10 +3,73 @@ import assert from 'node:assert/strict';
 import type { PokemonSet } from '@pkmn/data';
 
 import { isLegalTeam } from '../utils/legal';
+import { getShowdownTeam } from '../utils/showdown-parser';
 import { isLegalTeam as packageIsLegalTeam } from '../index';
 import type { Format, GenerationID, LegalLogEntry } from '../types';
 
 const genNum = 9;
+
+const sampleTeamChampions = `
+Whimsicott @ Occa Berry
+Ability: Prankster
+Level: 50
+EVs: 32 HP / 32 Def / 2 SpA
+Bold Nature
+- Moonblast
+- Tailwind
+- Encore
+- Protect
+
+Armarouge @ Focus Sash
+Ability: Weak Armor
+Level: 50
+EVs: 2 HP / 32 SpA / 32 Spe
+Modest Nature
+- Expanding Force
+- Armor Cannon
+- Aura Sphere
+- Protect
+
+Pelipper @ Sitrus Berry
+Ability: Drizzle
+Level: 50
+EVs: 32 HP / 13 Def / 10 SpD / 11 Spe
+Bold Nature
+- Weather Ball
+- Hurricane
+- Wide Guard
+- Tailwind
+
+Archaludon @ Leftovers
+Ability: Stamina
+Level: 50
+EVs: 32 HP / 1 Def / 23 SpD / 10 Spe
+Bold Nature
+- Electro Shot
+- Dragon Pulse
+- Snarl
+- Protect
+
+Garchomp-Mega @ Garchompite
+Ability: Sand Force
+Level: 50
+EVs: 2 HP / 32 SpA / 32 Spe
+Timid Nature
+- Draco Meteor
+- Earth Power
+- Fire Blast
+- Protect
+
+Dragonite @ Dragoninite
+Ability: Multiscale
+Level: 50
+EVs: 32 HP / 2 Def / 32 SpA
+Calm Nature
+- Hurricane
+- Protect
+- Thunderbolt
+- Draco Meteor
+`;
 
 function pokemon(overrides: Partial<PokemonSet<string>>): Partial<PokemonSet<string>> {
   return { level: 50, ...overrides };
@@ -152,6 +215,61 @@ test('isLegalTeam accepts a directly-listed Mega in champions format', async () 
   );
 
   assert.deepEqual(entries, [{ pokemon: 'Garchomp-Mega', legality: 'legal' }]);
+});
+
+test('isLegalTeam checks champions format against the champions pokedex, not the base gen', async () => {
+  const set = {
+    species: 'Flutter Mane',
+    ability: 'Protosynthesis',
+    moves: ['Moonblast', 'Shadow Ball'],
+  };
+
+  assert.deepEqual(await legalityOf(set), [{ pokemon: 'Flutter Mane', legality: 'legal' }]);
+  assert.deepEqual(await legalityOf(set, genNum, 'champions'), [
+    {
+      pokemon: 'Flutter Mane',
+      legality: 'illegal',
+      reason: "'Flutter Mane' is not in the format's pokedex.",
+    },
+  ]);
+});
+
+test('isLegalTeam flags items that are not available in champions format', async () => {
+  const set = {
+    species: 'Garchomp',
+    ability: 'Rough Skin',
+    item: 'Choice Specs',
+    moves: ['Earthquake'],
+  };
+
+  assert.deepEqual(await legalityOf(set), [{ pokemon: 'Garchomp', legality: 'legal' }]);
+  assert.deepEqual(await legalityOf(set, genNum, 'champions'), [
+    {
+      pokemon: 'Garchomp',
+      legality: 'illegal',
+      reason: "Item 'Choice Specs' does not exist in this format.",
+    },
+  ]);
+});
+
+test('isLegalTeam accepts a full champions team parsed from a Showdown export', async () => {
+  const team = getShowdownTeam(sampleTeamChampions, genNum);
+  if (!team) throw new Error('team should be parsed');
+
+  const result = await isLegalTeam(team, genNum, 'champions');
+
+  if (!result) throw new Error('result should be defined');
+  assert.deepEqual(
+    result.map((entries) => entries.map((entry) => `${entry.pokemon}: ${entry.legality}`)),
+    [
+      ['Whimsicott: legal'],
+      ['Armarouge: legal'],
+      ['Pelipper: legal'],
+      ['Archaludon: legal'],
+      ['Garchomp-Mega: legal'],
+      ['Dragonite: legal'],
+    ],
+  );
 });
 
 test('isLegalTeam returns undefined for an empty team', async () => {

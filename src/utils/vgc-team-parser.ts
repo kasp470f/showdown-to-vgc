@@ -7,7 +7,7 @@ import { Dex, ModdedDex, type StatID, ID, ModData } from '@pkmn/dex';
 import type { Species } from '@pkmn/dex-types';
 import type { ShowdownTeam } from '../types/showdown-team';
 
-export function championsExists(d: Data): boolean {
+function championsExists(d: Data): boolean {
   if (!d.exists) return false;
   if ('isNonstandard' in d && d.isNonstandard && d.isNonstandard !== 'Past') return false;
   if (d.kind === 'Ability' && d.id === 'noability') return false;

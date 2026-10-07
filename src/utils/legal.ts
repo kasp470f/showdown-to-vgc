@@ -1,8 +1,8 @@
 import { Generation, Generations, PokemonSet, toID } from '@pkmn/data';
-import { Dex, ModdedDex, ID, ModData } from '@pkmn/dex';
+import { Dex, ID, ModData } from '@pkmn/dex';
 import type { Species } from '@pkmn/dex-types';
 import { Format, GenerationID, LegalLogEntry, ShowdownTeam } from '../types';
-import { baseSpeciesId, championsExists } from './vgc-team-parser';
+import { baseSpeciesId } from './vgc-team-parser';
 
 export async function isLegalTeam(
   team: ShowdownTeam,
@@ -13,34 +13,41 @@ export async function isLegalTeam(
     return undefined;
   }
 
+  const isChampionsFormat = format === 'champions';
+  const generation = await getGeneration(genNum, isChampionsFormat);
+
   const log = await Promise.all(
-    team.team.map((pokemon) => isLegalPokemon(pokemon, genNum, format)),
+    team.team.map((pokemon) => isLegalPokemon(pokemon, genNum, generation, isChampionsFormat)),
   );
 
   return log.some((entries) => entries.length > 0) ? log : undefined;
 }
 
+async function getGeneration(
+  genNum: GenerationID,
+  isChampionsFormat: boolean,
+): Promise<Generation | undefined> {
+  if (!isChampionsFormat) {
+    return new Generations(Dex).get(genNum);
+  }
+
+  // Generations.get() resolves its dex through forGen(), which returns the cached standard dex and
+  // drops the mod data, so the champions Generation has to be built from the modded dex directly.
+  const championsMod = (await import('@pkmn/mods/champions')) as ModData;
+  return new Generation(Dex.mod('champions' as ID, championsMod), Generations.DEFAULT_EXISTS);
+}
+
 async function isLegalPokemon(
   pokemon: Partial<PokemonSet<string>>,
   genNum: GenerationID,
-  format: Format = undefined,
+  generation: Generation | undefined,
+  isChampionsFormat: boolean,
 ): Promise<LegalLogEntry[]> {
   const speciesName = pokemon.species;
   if (!speciesName) {
     return [illegalEntry(pokemon, 'Pokemon has no species set.')];
   }
 
-  const isChampionsFormat = format === 'champions';
-
-  let dex: ModdedDex = Dex;
-  if (isChampionsFormat) {
-    const championsMod = (await import('@pkmn/mods/champions')) as ModData;
-    dex = Dex.mod(`gen${genNum}` as ID, championsMod);
-  }
-
-  const generation = new Generations(dex, isChampionsFormat ? championsExists : undefined).get(
-    genNum,
-  );
   if (!generation) {
     return [illegalEntry(pokemon, `Unable to load dex data for generation ${genNum}.`)];
   }

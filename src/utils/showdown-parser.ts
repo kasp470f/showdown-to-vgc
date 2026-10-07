@@ -16,7 +16,7 @@ export function getShowdownTeam(text: string, genNum: GenerationID): ShowdownTea
 
     const normalizedTeam = Array.isArray(teamImport)
       ? teamImport
-      : (teamImport as { team?: Array<unknown> }).team ?? [];
+      : ((teamImport as { team?: Array<unknown> }).team ?? []);
 
     return { team: normalizedTeam as ShowdownTeam['team'] };
   } catch (error) {

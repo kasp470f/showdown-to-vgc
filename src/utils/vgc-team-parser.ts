@@ -89,7 +89,7 @@ function createVGCSheetPokemon(
   const level = set.level ?? 50;
   const evs = (set.evs ?? {}) as Partial<Record<StatID, number>>;
   const ivs = (set.ivs ?? {}) as Partial<Record<StatID, number>>;
-  const teraType = isChampionsFormat ? undefined : set.teraType ?? species.types[0];
+  const teraType = isChampionsFormat ? undefined : (set.teraType ?? species.types[0]);
 
   const vgcPokemon: VGCPokemon = {
     name: getName(),

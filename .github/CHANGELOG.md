@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- ([`1e7ecf1`](https://github.com/kasp470f/showdown-to-vgc/commit/1e7ecf197bff632fb3421d717dc48b1a9ef3a762)) chore(deps-dev): upgrade lint, format and TypeScript tooling - @kasp470f ([#15](https://github.com/kasp470f/showdown-to-vgc/pull/15))
 - ([`b1fdc3e`](https://github.com/kasp470f/showdown-to-vgc/commit/b1fdc3e34b01eef04bae05224e9d4c6093da939e)) feat: add legality checks for Pokémon teams - @kasp470f ([#14](https://github.com/kasp470f/showdown-to-vgc/pull/14))
 
 ### Fixed

@@ -15,7 +15,7 @@ function championsExists(d: Data): boolean {
 }
 
 /** Strips Mega/Primal forme suffixes (e.g. "-Mega", "-Mega-X", "-Mega-Y", "-Primal") to fall back to the base species. */
-function baseSpeciesId(id: string): string {
+export function baseSpeciesId(id: string): string {
   return id.replace(/-Mega(?:-[XY])?$/, '').replace(/-Primal$/, '');
 }
 
